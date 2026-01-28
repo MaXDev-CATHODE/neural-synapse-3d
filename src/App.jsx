@@ -100,8 +100,9 @@ function App() {
           <color attach="background" args={['#050505']} />
           <fog attach="fog" args={['#050505', 10, 30]} />
           
-          <ambientLight intensity={0.5} />
-          <pointLight position={[10, 10, 10]} intensity={1} />
+          <ambientLight intensity={0.8} />
+          <pointLight position={[10, 10, 10]} intensity={2.5} />
+          <pointLight position={[-10, -10, -10]} intensity={1.5} color="#5ccfe6" />
           
           <Scene networkRef={networkRef} />
         </Canvas>
