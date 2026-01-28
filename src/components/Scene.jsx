@@ -2,88 +2,132 @@ import React, { useRef, useMemo, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { Sphere, Line } from '@react-three/drei';
+import { NeuralNetwork } from '../simulation/NeuralNetwork';
 
-const Scene = () => {
+const Scene = ({ networkRef }) => {
     const meshRef = useRef();
-    const count = 200; // Number of neurons
-    const connectionDistance = 3.5;
+    const connectionsRef = useRef();
+    const nodeCount = 200;
+    
+    // Shader material for connections (Glowing Pulse)
+    const lineMaterial = useMemo(() => new THREE.LineBasicMaterial({
+        color: 0x5ccfe6,
+        transparent: true,
+        opacity: 0.1,
+        vertexColors: true
+    }), []);
 
-    // Generate random positions for neurons
-    const particles = useMemo(() => {
-        const temp = [];
-        for (let i = 0; i < count; i++) {
-            const x = (Math.random() - 0.5) * 20;
-            const y = (Math.random() - 0.5) * 20;
-            const z = (Math.random() - 0.5) * 20;
-            temp.push(new THREE.Vector3(x, y, z));
+    // Create stable network instance if not provided
+    useEffect(() => {
+        if (!networkRef.current) {
+            networkRef.current = new NeuralNetwork(nodeCount, 3.5);
         }
-        return temp;
-    }, [count]);
+    }, []);
 
-    // Calculate connections
-    const connections = useMemo(() => {
-        const lines = [];
-        particles.forEach((p1, i) => {
-            particles.forEach((p2, j) => {
-                if (i !== j) {
-                    const dist = p1.distanceTo(p2);
-                    if (dist < connectionDistance) {
-                        lines.push([p1, p2]);
-                    }
-                }
-            });
-        });
-        return lines;
-    }, [particles]);
-
-    // Update neuron positions (subtle float)
-    useFrame((state) => {
-        if (!meshRef.current) return;
+    // Initial Positions for InstancedMesh
+    useEffect(() => {
+        if (!meshRef.current || !networkRef.current) return;
         
-        let i = 0;
-        const time = state.clock.getElapsedTime();
         const dummy = new THREE.Object3D();
-
-        particles.forEach((particle, index) => {
-            const { x, y, z } = particle;
-            // Float logic
-            dummy.position.set(
-                x + Math.sin(time * 0.2 + index) * 0.2,
-                y + Math.cos(time * 0.3 + index) * 0.2,
-                z + Math.sin(time * 0.1 + index) * 0.2
-            );
+        networkRef.current.neurons.forEach((neuron, i) => {
+            dummy.position.set(neuron.position.x, neuron.position.y, neuron.position.z);
             dummy.updateMatrix();
-            meshRef.current.setMatrixAt(index, dummy.matrix);
+            meshRef.current.setMatrixAt(i, dummy.matrix);
         });
         meshRef.current.instanceMatrix.needsUpdate = true;
+    }, []);
+
+    // Animation Loop
+    useFrame((state, delta) => {
+        if (!meshRef.current || !connectionsRef.current || !networkRef.current) return;
+
+        const network = networkRef.current;
+        const firingIds = network.step(Math.min(delta, 0.1)); // Update logic
+        const time = state.clock.getElapsedTime();
+
+        // Update Neuron Visuals (Color flash on firing)
+        const dummy = new THREE.Object3D();
+        const color = new THREE.Color();
+
+        for (let i = 0; i < network.neuronCount; i++) {
+            const neuron = network.neurons[i];
+            
+            // Re-calculate position with float (visual only)
+            dummy.position.set(
+                neuron.position.x + Math.sin(time * 0.2 + i) * 0.1,
+                neuron.position.y + Math.cos(time * 0.3 + i) * 0.1,
+                neuron.position.z + Math.sin(time * 0.1 + i) * 0.1
+            );
+            dummy.updateMatrix();
+            meshRef.current.setMatrixAt(i, dummy.matrix);
+
+            // Color logic: Base + Potential
+            if (neuron.type === 'INHIBITORY') {
+                 color.setHSL(0.9, 0.8, 0.1 + neuron.potential * 0.8); // Red flip
+            } else {
+                 color.setHSL(0.5, 0.8, 0.1 + neuron.potential * 0.8); // Blue pulse
+            }
+            meshRef.current.setColorAt(i, color);
+        }
+        meshRef.current.instanceMatrix.needsUpdate = true;
+        meshRef.current.instanceColor.needsUpdate = true;
+
+        // Update Connections (Geometry update is expensive, maybe optimize later if lagging)
+        // Here we just update opacity/colors based on active pulses in a simpler way if possible
+        // For strictly correct visualization we'd need to update line colors.
+        // Optimization: Updates line colors only
+        if (connectionsRef.current) {
+             const colors = connectionsRef.current.geometry.attributes.color;
+             if (colors) {
+                let colorIdx = 0;
+                network.connections.forEach(conn => {
+                     // Start Color
+                     const c1 = new THREE.Color().setHex(0x1f2430).lerp(new THREE.Color(0x5ccfe6), conn.active);
+                     // End Color
+                     const c2 = new THREE.Color().setHex(0x1f2430).lerp(new THREE.Color(0x5ccfe6), conn.active);
+                     
+                     colors.setXYZ(colorIdx++, c1.r, c1.g, c1.b);
+                     colors.setXYZ(colorIdx++, c2.r, c2.g, c2.b);
+                });
+                colors.needsUpdate = true;
+             }
+        }
     });
+
+    // Build Line Geometry once
+    const lineGeometry = useMemo(() => {
+        if (!networkRef.current) return null;
+        const points = [];
+        const colors = [];
+        networkRef.current.connections.forEach(conn => {
+            const n1 = networkRef.current.neurons[conn.from];
+            const n2 = networkRef.current.neurons[conn.to];
+            points.push(n1.position.x, n1.position.y, n1.position.z);
+            points.push(n2.position.x, n2.position.y, n2.position.z);
+            colors.push(0.1, 0.1, 0.2); // r,g,b
+            colors.push(0.1, 0.1, 0.2);
+        });
+        
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
+        geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+        return geo;
+    }, []);
+
+    if (!lineGeometry) return null;
 
     return (
         <group rotation={[0, 0, 0]}>
-            {/* Neurons as InstancedMesh for performance */}
-            <instancedMesh ref={meshRef} args={[null, null, count]}>
-                <sphereGeometry args={[0.15, 32, 32]} />
+            <instancedMesh ref={meshRef} args={[null, null, nodeCount]}>
+                <sphereGeometry args={[0.15, 16, 16]} />
                 <meshStandardMaterial 
-                    color="#5ccfe6" 
-                    emissive="#5ccfe6" 
-                    emissiveIntensity={2} 
                     toneMapped={false}
+                    roughness={0.4}
+                    metalness={0.8}
                 />
             </instancedMesh>
 
-            {/* Connections */}
-            <group>
-                {connections.map((line, i) => (
-                    <Line
-                        key={i}
-                        points={line}
-                        color="#1f2430"
-                        transparent
-                        opacity={0.1}
-                        lineWidth={1}
-                    />
-                ))}
-            </group>
+            <lineSegments ref={connectionsRef} geometry={lineGeometry} material={lineMaterial} />
         </group>
     );
 };
