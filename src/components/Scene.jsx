@@ -1,7 +1,6 @@
 import React, { useRef, useMemo, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
-import { LineSegments } from 'three';
 import { NeuralNetwork } from '../simulation/NeuralNetwork';
 
 const Scene = ({ networkRef }) => {
@@ -9,7 +8,7 @@ const Scene = ({ networkRef }) => {
     const connectionsRef = useRef();
     const nodeCount = 200;
 
-    // Use useMemo to initialize the network once
+    // Use useMemo to initialize the network once safely
     const network = useMemo(() => {
         const net = new NeuralNetwork(nodeCount, 3.5);
         if (networkRef) networkRef.current = net;
@@ -18,10 +17,11 @@ const Scene = ({ networkRef }) => {
     
     // Shader material for connections (Glowing Pulse)
     const lineMaterial = useMemo(() => new THREE.LineBasicMaterial({
-        color: 0x5ccfe6,
+        color: 0x00f3ff,
         transparent: true,
-        opacity: 0.1,
-        vertexColors: true
+        opacity: 0.5, // Increased base opacity
+        vertexColors: true,
+        blending: THREE.AdditiveBlending
     }), []);
 
     // Initial Positions for InstancedMesh
@@ -42,21 +42,27 @@ const Scene = ({ networkRef }) => {
         if (!meshRef.current || !connectionsRef.current || !network) return;
 
         // Mouse Interaction
-        const { raycaster, mouse, camera } = state;
+        const { raycaster, mouse, camera, clock } = state;
         raycaster.setFromCamera(mouse, camera);
         
-        // Handle Hover Stimulation
+        // Handle Hover Stimulation & Collapse
         const intersects = raycaster.intersectObject(meshRef.current);
         if (intersects.length > 0) {
             const instanceId = intersects[0].instanceId;
             const neuron = network.neurons[instanceId];
             if (neuron) {
-                network.stimulateNear(neuron.position.x, neuron.position.y, neuron.position.z, 2.5);
+                // Stimulate near hover
+                network.stimulateNear(neuron.position.x, neuron.position.y, neuron.position.z, 3.0);
+                
+                // Occasional collapse on hover movement to satisfy user request
+                if (Math.random() > 0.95) {
+                    network.collapseAt(neuron.position.x, neuron.position.y, neuron.position.z, 5, 2.0);
+                }
             }
         }
 
-        const firingIds = network.step(Math.min(delta, 0.1)); // Update logic
-        const time = state.clock.getElapsedTime();
+        network.step(Math.min(delta, 0.1)); // Update SNN logic
+        const time = clock.getElapsedTime();
 
         // Update Neuron Visuals (Color flash on firing)
         const dummy = new THREE.Object3D();
@@ -67,20 +73,20 @@ const Scene = ({ networkRef }) => {
             
             // Re-calculate position with float (visual only)
             dummy.position.set(
-                neuron.position.x + Math.sin(time * 0.2 + i) * 0.1,
-                neuron.position.y + Math.cos(time * 0.3 + i) * 0.1,
-                neuron.position.z + Math.sin(time * 0.1 + i) * 0.1
+                neuron.position.x + Math.sin(time * 0.5 + i) * 0.05,
+                neuron.position.y + Math.cos(time * 0.7 + i) * 0.05,
+                neuron.position.z + Math.sin(time * 0.3 + i) * 0.05
             );
             dummy.updateMatrix();
             meshRef.current.setMatrixAt(i, dummy.matrix);
 
-            // Color logic: HIGH VISIBILITY
-            if (neuron.type === 'INHIBITORY') {
-                 // Vibrant Red/Pink
-                 color.setHSL(0.95, 0.9, 0.4 + neuron.potential * 0.6); 
+            // Color logic: HIGH CONTRAST NEON
+            if (neuron.potential > 0.9) {
+                color.setHex(0xffffff); // Fire = WHITE
+            } else if (neuron.type === 'INHIBITORY') {
+                color.setHSL(0.9, 1.0, 0.3 + neuron.potential * 0.7); // HOT PINK
             } else {
-                 // Electric Cyan
-                 color.setHSL(0.5, 1.0, 0.5 + neuron.potential * 0.5); 
+                color.setHSL(0.5, 1.0, 0.4 + neuron.potential * 0.6); // ELECTRIC CYAN
             }
             meshRef.current.setColorAt(i, color);
         }
@@ -93,9 +99,9 @@ const Scene = ({ networkRef }) => {
              if (colors) {
                 let colorIdx = 0;
                 network.connections.forEach(conn => {
-                     const intensity = 0.4 + conn.active * 0.6; // Higher base visibility
-                     const targetColor = new THREE.Color(0x5ccfe6);
-                     const c = new THREE.Color(0x1a2130).lerp(targetColor, intensity);
+                     const intensity = 0.2 + conn.active * 0.8;
+                     const targetColor = new THREE.Color(0x00f3ff);
+                     const c = new THREE.Color(0x051015).lerp(targetColor, intensity);
                      colors.setXYZ(colorIdx++, c.r, c.g, c.b);
                      colors.setXYZ(colorIdx++, c.r, c.g, c.b);
                 });
@@ -108,7 +114,7 @@ const Scene = ({ networkRef }) => {
         if (!network || !meshRef.current) return;
         if (e.intersections.length > 0) {
             const p = e.intersections[0].point;
-            network.collapseAt(p.x, p.y, p.z, 10, 5.0);
+            network.collapseAt(p.x, p.y, p.z, 12, 6.0); // MASSIVE COLLAPSE
         }
     };
 
@@ -121,7 +127,6 @@ const Scene = ({ networkRef }) => {
             const n2 = network.neurons[conn.to];
             points.push(n1.position.x, n1.position.y, n1.position.z);
             points.push(n2.position.x, n2.position.y, n2.position.z);
-            // Higher base color for visibility
             colors.push(0.1, 0.2, 0.3);
             colors.push(0.1, 0.2, 0.3);
         });
@@ -133,26 +138,20 @@ const Scene = ({ networkRef }) => {
     }, [network]);
 
     return (
-        <group rotation={[0, 0, 0]}>
+        <group>
             <instancedMesh 
                 ref={meshRef} 
                 args={[null, null, nodeCount]}
                 onClick={handleClick}
             >
-                <sphereGeometry args={[0.25, 12, 12]} />
+                <sphereGeometry args={[0.3, 12, 12]} />
                 <meshBasicMaterial 
                     toneMapped={false}
                     transparent={true}
-                    opacity={0.9}
+                    opacity={1.0}
+                    blending={THREE.AdditiveBlending}
                 />
             </instancedMesh>
-
-            <lineSegments ref={connectionsRef} geometry={lineGeometry} material={lineMaterial} />
-        </group>
-    );
-};
-
-export default Scene;
 
             <lineSegments ref={connectionsRef} geometry={lineGeometry} material={lineMaterial} />
         </group>
