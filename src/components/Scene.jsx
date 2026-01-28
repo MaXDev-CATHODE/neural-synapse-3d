@@ -1,13 +1,20 @@
 import React, { useRef, useMemo, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
-import { Sphere, Line } from '@react-three/drei';
+import { LineSegments } from 'three';
 import { NeuralNetwork } from '../simulation/NeuralNetwork';
 
 const Scene = ({ networkRef }) => {
     const meshRef = useRef();
     const connectionsRef = useRef();
     const nodeCount = 200;
+
+    // Use useMemo to initialize the network once
+    const network = useMemo(() => {
+        const net = new NeuralNetwork(nodeCount, 3.5);
+        if (networkRef) networkRef.current = net;
+        return net;
+    }, [nodeCount, networkRef]);
     
     // Shader material for connections (Glowing Pulse)
     const lineMaterial = useMemo(() => new THREE.LineBasicMaterial({
@@ -17,31 +24,23 @@ const Scene = ({ networkRef }) => {
         vertexColors: true
     }), []);
 
-    // Create stable network instance if not provided
-    useEffect(() => {
-        if (!networkRef.current) {
-            networkRef.current = new NeuralNetwork(nodeCount, 3.5);
-        }
-    }, []);
-
     // Initial Positions for InstancedMesh
     useEffect(() => {
-        if (!meshRef.current || !networkRef.current) return;
+        if (!meshRef.current || !network) return;
         
         const dummy = new THREE.Object3D();
-        networkRef.current.neurons.forEach((neuron, i) => {
+        network.neurons.forEach((neuron, i) => {
             dummy.position.set(neuron.position.x, neuron.position.y, neuron.position.z);
             dummy.updateMatrix();
             meshRef.current.setMatrixAt(i, dummy.matrix);
         });
         meshRef.current.instanceMatrix.needsUpdate = true;
-    }, []);
+    }, [network]);
 
     // Animation Loop
     useFrame((state, delta) => {
-        if (!meshRef.current || !connectionsRef.current || !networkRef.current) return;
+        if (!meshRef.current || !connectionsRef.current || !network) return;
 
-        const network = networkRef.current;
         const firingIds = network.step(Math.min(delta, 0.1)); // Update logic
         const time = state.clock.getElapsedTime();
 
@@ -72,39 +71,31 @@ const Scene = ({ networkRef }) => {
         meshRef.current.instanceMatrix.needsUpdate = true;
         meshRef.current.instanceColor.needsUpdate = true;
 
-        // Update Connections (Geometry update is expensive, maybe optimize later if lagging)
-        // Here we just update opacity/colors based on active pulses in a simpler way if possible
-        // For strictly correct visualization we'd need to update line colors.
-        // Optimization: Updates line colors only
+        // Update Connections
         if (connectionsRef.current) {
              const colors = connectionsRef.current.geometry.attributes.color;
              if (colors) {
                 let colorIdx = 0;
                 network.connections.forEach(conn => {
-                     // Start Color
-                     const c1 = new THREE.Color().setHex(0x1f2430).lerp(new THREE.Color(0x5ccfe6), conn.active);
-                     // End Color
-                     const c2 = new THREE.Color().setHex(0x1f2430).lerp(new THREE.Color(0x5ccfe6), conn.active);
-                     
-                     colors.setXYZ(colorIdx++, c1.r, c1.g, c1.b);
-                     colors.setXYZ(colorIdx++, c2.r, c2.g, c2.b);
+                     const c = new THREE.Color().setHex(0x1f2430).lerp(new THREE.Color(0x5ccfe6), conn.active);
+                     colors.setXYZ(colorIdx++, c.r, c.g, c.b);
+                     colors.setXYZ(colorIdx++, c.r, c.g, c.b);
                 });
                 colors.needsUpdate = true;
              }
         }
     });
 
-    // Build Line Geometry once
+    // Build Line Geometry
     const lineGeometry = useMemo(() => {
-        if (!networkRef.current) return null;
         const points = [];
         const colors = [];
-        networkRef.current.connections.forEach(conn => {
-            const n1 = networkRef.current.neurons[conn.from];
-            const n2 = networkRef.current.neurons[conn.to];
+        network.connections.forEach(conn => {
+            const n1 = network.neurons[conn.from];
+            const n2 = network.neurons[conn.to];
             points.push(n1.position.x, n1.position.y, n1.position.z);
             points.push(n2.position.x, n2.position.y, n2.position.z);
-            colors.push(0.1, 0.1, 0.2); // r,g,b
+            colors.push(0.1, 0.1, 0.2);
             colors.push(0.1, 0.1, 0.2);
         });
         
@@ -112,9 +103,7 @@ const Scene = ({ networkRef }) => {
         geo.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
         geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
         return geo;
-    }, []);
-
-    if (!lineGeometry) return null;
+    }, [network]);
 
     return (
         <group rotation={[0, 0, 0]}>
