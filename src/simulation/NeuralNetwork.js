@@ -1,49 +1,53 @@
 export class NeuralNetwork {
-    constructor(neuronCount = 200, connectionDistance = 3.5) {
+    constructor(neuronCount = 100, connectionDistance = 4.0) {
         this.neuronCount = neuronCount;
         this.neurons = [];
         this.connections = [];
-        this.signals = []; // Active signals traveling through synapses
+        this.signals = [];
         this.connectionDistance = connectionDistance;
-        
         this.init();
     }
 
     init() {
+        // Create a focused cluster + outliers
         for (let i = 0; i < this.neuronCount; i++) {
             this.neurons.push({
                 id: i,
                 position: {
-                    x: (Math.random() - 0.5) * 20,
-                    y: (Math.random() - 0.5) * 20,
-                    z: (Math.random() - 0.5) * 20
+                    x: (Math.random() - 0.5) * 15, // Tighter cluster
+                    y: (Math.random() - 0.5) * 15,
+                    z: (Math.random() - 0.5) * 15
                 },
                 potential: 0,
-                threshold: 1.0,
-                decay: 0.96,
-                refractoryPeriod: 0,
-                lastSpike: -100, // For STDP
-                type: Math.random() > 0.85 ? 'INHIBITORY' : 'EXCITATORY'
+                type: Math.random() > 0.5 ? 'EXCITATORY' : 'INHIBITORY'
             });
         }
 
+        // Force connections
         for (let i = 0; i < this.neuronCount; i++) {
             const n1 = this.neurons[i];
-            for (let j = i + 1; j < this.neuronCount; j++) {
+            // Connect to at least 3 nearest neighbors guaranteed
+            let candidates = [];
+            for (let j = 0; j < this.neuronCount; j++) {
+                if (i === j) continue;
                 const n2 = this.neurons[j];
                 const dx = n1.position.x - n2.position.x;
                 const dy = n1.position.y - n2.position.y;
                 const dz = n1.position.z - n2.position.z;
-                const distSq = dx*dx + dy*dy + dz*dz;
-
-                if (distSq < this.connectionDistance * this.connectionDistance) {
-                    const dist = Math.sqrt(distSq);
+                const dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
+                candidates.push({ id: j, dist });
+            }
+            // Sort by distance
+            candidates.sort((a, b) => a.dist - b.dist);
+            
+            // Connect to top 5 closest
+            for(let k=0; k<5; k++) {
+                if(candidates[k]) {
                     this.connections.push({
                         from: i,
-                        to: j,
-                        weight: Math.random() * 0.5 + 0.5,
-                        length: dist,
-                        active: 0 // Visualization intensity
+                        to: candidates[k].id,
+                        weight: 1.0,
+                        active: 1.0 // Start full visible
                     });
                 }
             }
@@ -51,115 +55,46 @@ export class NeuralNetwork {
     }
 
     step(deltaTime, time) {
-        const firingNeurons = [];
-
-        // 1. Process Neurons
-        this.neurons.forEach(n => {
-            if (n.refractoryPeriod > 0) {
-                n.refractoryPeriod -= deltaTime;
-                n.potential = 0;
-            } else {
-                n.potential *= this.decay;
-                
-                // Spontaneous activity
-                if (Math.random() < 0.002) n.potential += 0.3;
-
-                if (n.potential >= n.threshold) {
-                    n.potential = 0;
-                    n.refractoryPeriod = 0.1; 
-                    n.lastSpike = time;
-                    firingNeurons.push(n.id);
-                }
-            }
-        });
-
-        // 2. Handle New Firing
-        firingNeurons.forEach(id => {
-            this.connections.forEach(conn => {
-                let sourceId = -1;
-                let targetId = -1;
-
-                if (conn.from === id) { sourceId = conn.from; targetId = conn.to; }
-                else if (conn.to === id) { sourceId = conn.to; targetId = conn.from; }
-
-                if (targetId !== -1) {
-                    // Create a traveling signal
-                    this.signals.push({
-                        from: sourceId,
-                        to: targetId,
-                        weight: conn.weight,
-                        progress: 0,
-                        speed: 15.0, // Units per second
-                        targetLength: conn.length,
-                        type: this.neurons[sourceId].type,
-                        conn: conn // Reference for visual update
-                    });
-                    conn.active = 1.0;
-                }
+        // 1. Auto-Fire Logic (Spam signals for visibility)
+        if (Math.random() > 0.8) { // 20% chance per frame to fire a random neuron
+            const idx = Math.floor(Math.random() * this.neuronCount);
+            const neuron = this.neurons[idx];
+            neuron.potential = 1.0;
+            
+            // Trigger 3 random signals from this neuron
+            this.connections.filter(c => c.from === idx).forEach(conn => {
+                this.signals.push({
+                    from: conn.from,
+                    to: conn.to,
+                    progress: 0,
+                    speed: 10.0 // Slow enough to see, fast enough to flow
+                });
+                conn.active = 1.0;
             });
-        });
+        }
 
-        // 3. Update Signals (Latency)
+        // 2. Update Signals
         for (let i = this.signals.length - 1; i >= 0; i--) {
             const s = this.signals[i];
-            s.progress += (s.speed * deltaTime) / s.targetLength;
+            s.progress += deltaTime * 0.5 * s.speed / 5.0; // Normalized speed
             
             if (s.progress >= 1.0) {
-                // Signal reached target
+                // Hit target
                 const target = this.neurons[s.to];
-                const impact = s.weight * (s.type === 'EXCITATORY' ? 0.4 : -0.5);
-                target.potential += impact;
-
-                // STDP: If target just fired, strengthen connection. If target fired long ago, weaken.
-                // Simple version:
-                if (Math.abs(time - target.lastSpike) < 0.05) {
-                    s.conn.weight = Math.min(2.0, s.conn.weight + 0.05);
-                }
-
+                target.potential = 1.0; // Light up target
                 this.signals.splice(i, 1);
             }
         }
 
-        // 4. Update Visuals
-        this.connections.forEach(conn => {
-            if (conn.active > 0) conn.active *= 0.92;
+        // 3. Decay Potentials
+        this.neurons.forEach(n => {
+            n.potential *= 0.95;
         });
 
-        return firingNeurons;
-    }
-
-    injectStimulus(count = 5, strength = 1.0) {
-        for(let i=0; i<count; i++) {
-            const idx = Math.floor(Math.random() * this.neuronCount);
-            this.neurons[idx].potential += strength;
-        }
-    }
-
-    collapseAt(x, y, z, range = 5, intensity = 2.0) {
-        this.neurons.forEach(n => {
-            const dx = n.position.x - x;
-            const dy = n.position.y - y;
-            const dz = n.position.z - z;
-            const distSq = dx*dx + dy*dy + dz*dz;
-
-            if (distSq < range * range) {
-                const dist = Math.sqrt(distSq);
-                n.potential += intensity * (1 - dist/range);
-                n.refractoryPeriod = 0;
-            }
-        });
-    }
-
-    stimulateNear(x, y, z, range = 3) {
-        this.neurons.forEach(n => {
-            const dx = n.position.x - x;
-            const dy = n.position.y - y;
-            const dz = n.position.z - z;
-            const distSq = dx*dx + dy*dy + dz*dz;
-            if (distSq < range * range) {
-                n.potential += 0.08; 
-            }
+        // 4. Decay Connections transparency
+        this.connections.forEach(c => {
+            c.active *= 0.98;
+            if(c.active < 0.2) c.active = 0.2; // Min visibility
         });
     }
 }
-

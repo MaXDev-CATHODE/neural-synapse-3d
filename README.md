@@ -1,26 +1,40 @@
-﻿# AI Performance Monitor đźš€
+# Neural Synapse 3D 🧠
 
-> A high-performance, real-time metrics dashboard built with React, TailwindCSS, and Recharts. Designed to monitor AI Cluster rendering nodes.
+![React](https://img.shields.io/badge/react-%2320232a.svg?style=for-the-badge&logo=react&logoColor=%2361DAFB)
+![Threejs](https://img.shields.io/badge/threejs-black?style=for-the-badge&logo=three.js&logoColor=white)
+![Vite](https://img.shields.io/badge/vite-%23646CFF.svg?style=for-the-badge&logo=vite&logoColor=white)
+![License](https://img.shields.io/badge/license-MIT-green?style=for-the-badge)
 
-![Dashboard Preview](https://img.shields.io/badge/Status-Active-green) ![React](https://img.shields.io/badge/React-18-blue) ![Tailwind](https://img.shields.io/badge/Tailwind-CSS-cyan)
+> High-performance, interactive Spiking Neural Network (SNN) visualization engine built with React Three Fiber and WebGL.
 
-## âšˇ Features
-- **Real-time Visualization:** WebSocket-ready architecture for streaming metrics.
-- **Glassmorphism UI:** Modern, dark-mode-first aesthetic inspired by HUD interfaces.
-- **Responsive Charts:** High frame-rate rendering using Recharts.
-- **AI-Optimized:** Code structure generated and optimized using LLM workflows.
+**[🔴 Live Demo](https://maxdev-cathode.github.io/neural-synapse-3d/)**
 
-## đź› ď¸Ź Stack
-- **Core:** React + Vite
-- **Styling:** TailwindCSS + Custom Glass Utilities
-- **Charts:** Recharts
-- **Icons:** Lucide-React
+## 🚀 Overview
 
-## đźš€ Quick Start
-\\\ash
+**Neural Synapse 3D** is an interactive exploration of cognitive architectures, visualizing how simplified neural networks process sensory input, form associations, and generate concepts in a 3D space.
+
+## ✨ Key Features
+
+-   **Real-time 3D Visualization**: Renders thousands of neurons and synapses using instanced mesh rendering for 60FPS performance.
+-   **Interactive Input Layer**: Draw directly onto the "Retina" layer to stimulate sensory neurons.
+-   **Cognitive Architecture**: Distinct layers for Sensory, Feature Extraction, Memory, and Associative processing.
+
+## 🛠️ Tech Stack
+
+-   **Frontend**: React 18
+-   **Build Tool**: Vite
+-   **3D Engine**: Three.js / React Three Fiber / Drei
+-   **Styling**: TailwindCSS
+
+## 📦 Installation
+
+```bash
+git clone https://github.com/maxdev-cathode/neural-synapse-3d.git
+cd neural-synapse-3d
 npm install
 npm run dev
-\\\
+```
 
----
-*Created by [MaksDev](https://github.com/MaXDev-CATHODE)*
+## 📄 License
+
+This project is licensed under the MIT License.
