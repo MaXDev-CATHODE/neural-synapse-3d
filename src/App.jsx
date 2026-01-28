@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Canvas } from '@react-three/fiber';
-import { OrbitControls, PerspectiveCamera, Bloom, EffectComposer } from '@react-three/drei';
+import { OrbitControls, PerspectiveCamera } from '@react-three/drei';
 // import { EffectComposer, Bloom } from '@react-three/postprocessing' // Note: using drei's Effects usually simpler but customized pipeline might be needed. Let's stick to simple layout first.
 import Scene from './components/Scene';
 import Terminal from './components/Terminal';
