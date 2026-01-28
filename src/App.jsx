@@ -1,20 +1,20 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Canvas } from '@react-three/fiber';
+import * as THREE from 'three';
 import { OrbitControls, PerspectiveCamera } from '@react-three/drei';
-// import { EffectComposer, Bloom } from '@react-three/postprocessing' // Note: using drei's Effects usually simpler but customized pipeline might be needed. Let's stick to simple layout first.
+import { EffectComposer, Bloom, Noise, Vignette } from '@react-three/postprocessing';
 import Scene from './components/Scene';
 import Terminal from './components/Terminal';
-import { NeuralNetwork } from './simulation/NeuralNetwork'; // Import class
+import { NeuralNetwork } from './simulation/NeuralNetwork'; 
 
 function App() {
   const [terminalOpen, setTerminalOpen] = useState(true);
   const [systemLogs, setSystemLogs] = useState([
     "[SYSTEM] Neural Core Initialized...",
     "[SYSTEM] Synaptic weights loaded.",
-    "[Ready] Waiting for input...",
+    "[Ready] Neural Masterpiece running in HDR mode.",
   ]);
   
-  // Ref to hold the Network Logic Instance
   const networkRef = useRef(null);
 
   const addLog = (msg) => {
@@ -36,20 +36,23 @@ function App() {
       }
       else if (cmd.startsWith('stimulate')) {
           const val = parseFloat(cmd.split(' ')[1]) || 1.0;
-          networkRef.current.injectStimulus(10, val);
-          addLog(`[OK] Injected ${val}v into 10 nodes.`);
+          networkRef.current.injectStimulus(15, val); // Increased count
+          addLog(`[OK] Injected ${val}v into 15 nodes.`);
       }
       else if (cmd === 'reset') {
           networkRef.current.neurons.forEach(n => {
               n.potential = 0; 
               n.refractoryPeriod = 0;
           });
+          networkRef.current.signals = [];
           addLog("[OK] Core reset complete.");
       }
       else if (cmd === 'status') {
           const active = networkRef.current.neurons.filter(n => n.potential > 0.1).length;
+          const signals = networkRef.current.signals.length;
           addLog(`[METRICS] Active Neurons: ${active} / ${networkRef.current.neuronCount}`);
-          addLog(`[METRICS] Peak Voltage: 1.0v`);
+          addLog(`[METRICS] Active Signals: ${signals}`);
+          addLog(`[METRICS] Peak Voltage: 1.0v (HDR Enabled)`);
       }
       else if (cmd === 'clear') {
           setSystemLogs([]);
@@ -59,54 +62,49 @@ function App() {
       }
   };
 
-  // Background Monitoring Stream
   useEffect(() => {
     const interval = setInterval(() => {
-      if (Math.random() > 0.7) {
+      if (Math.random() > 0.8) {
         const neuronId = Math.floor(Math.random() * 200);
         const voltage = (Math.random() * 1.5).toFixed(4);
-        const states = ["FIRING", "REFRACTORY", "DEPOLARIZING", "COLLAPSED"];
-        const state = states[Math.floor(Math.random() * states.length)];
-        
         const timestamp = new Date().toLocaleTimeString('en-US', { hour12: false });
-        addLog(`[${timestamp}] NODE_${neuronId}: ${state} @ ${voltage}v`);
+        addLog(`[${timestamp}] NODE_${neuronId}: FIRING @ ${voltage}v`);
       }
-    }, 2000);
+    }, 3000);
     return () => clearInterval(interval);
   }, []);
 
   return (
-    <div className="w-full h-screen relative bg-terminal-black overflow-hidden font-mono">
+    <div className="w-full h-screen relative bg-[#020202] overflow-hidden font-mono text-white">
       {/* 3D Scene Layer */}
       <div className="absolute inset-0 z-0 cursor-crosshair">
         <Canvas 
-          gl={{ antialias: false, toneMapping: 0 }}
-          onPointerDown={(e) => {
-             // Global click handler to trigger collapse via networkRef
-             // Note: R3F components handle their own, but we can catch "misses" here
-             // Using e.intersections if we want to hit the network
+          gl={{ 
+            antialias: true, 
+            toneMapping: THREE.NoToneMapping,
+            stencil: false,
+            depth: true,
+            powerPreference: "high-performance"
           }}
+          dpr={[1, 2]}
         >
-          <PerspectiveCamera makeDefault position={[0, 0, 15]} />
+          <PerspectiveCamera makeDefault position={[0, 0, 18]} />
           <OrbitControls 
             enableZoom={true} 
             enablePan={false} 
-            autoRotate={!terminalOpen} // Stop rotation when terminal is active for precision
-            autoRotateSpeed={0.5} 
-            minDistance={5} 
-            maxDistance={30} 
+            autoRotate={!terminalOpen} 
+            autoRotateSpeed={0.3} 
+            minDistance={8} 
+            maxDistance={35} 
           />
           
-          <color attach="background" args={['#050505']} />
-          <fog attach="fog" args={['#050505', 10, 30]} />
-          
-          <ambientLight intensity={0.8} />
-          <pointLight position={[10, 10, 10]} intensity={2.5} />
-          <pointLight position={[-10, -10, -10]} intensity={1.5} color="#5ccfe6" />
+          <color attach="background" args={['#010101']} />
+          {/* <fog attach="fog" args={['#010101', 15, 45]} /> */}
           
           <Scene networkRef={networkRef} />
         </Canvas>
       </div>
+
 
       {/* VFX Layer */}
       <div className="absolute inset-0 pointer-events-none z-10 bg-scanlines opacity-10"></div>

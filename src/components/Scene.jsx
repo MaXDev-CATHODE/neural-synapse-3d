@@ -1,117 +1,46 @@
-import React, { useRef, useMemo, useEffect, useLayoutEffect } from 'react';
+import React, { useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { NeuralNetwork } from '../simulation/NeuralNetwork';
 
-const Scene = ({ networkRef }) => {
-    const meshRef = useRef();
+const Scene = ({ networkRef, nodeCount = 100 }) => {
+    const groupRef = useRef();
     const connectionsRef = useRef();
-    const nodeCount = 200;
 
     const network = useMemo(() => {
         const net = new NeuralNetwork(nodeCount, 3.5);
         if (networkRef) networkRef.current = net;
         return net;
     }, [nodeCount, networkRef]);
-    
-    const lineMaterial = useMemo(() => new THREE.LineBasicMaterial({
-        color: 0x5ccfe6,
-        transparent: true,
-        opacity: 0.8,
-        vertexColors: true,
-        blending: THREE.AdditiveBlending
-    }), []);
 
-    // CUSTOM SHADER for neurons to bypass any attribute/material issues
-    const neuronMaterial = useMemo(() => new THREE.ShaderMaterial({
-        uniforms: {
-            time: { value: 0 }
-        },
-        vertexShader: `
-            attribute vec3 instanceColor;
-            varying vec3 vColor;
-            void main() {
-                vColor = instanceColor;
-                // Instancing support
-                vec4 localPosition = instanceMatrix * vec4(position, 1.0);
-                gl_Position = projectionMatrix * modelViewMatrix * localPosition;
-            }
-        `,
-        fragmentShader: `
-            varying vec3 vColor;
-            void main() {
-                // Guaranteed visible color
-                gl_FragColor = vec4(vColor, 1.0);
-            }
-        `,
-        transparent: false,
-    }), []);
+    const signalGeo = useMemo(() => new THREE.SphereGeometry(0.15, 8, 8), []);
+    const signalMat = useMemo(() => new THREE.MeshBasicMaterial({ color: '#ffffff', toneMapped: false }), []);
 
-    useLayoutEffect(() => {
-        if (!meshRef.current || !network) return;
-        
-        const dummy = new THREE.Object3D();
-        const colors = new Float32Array(nodeCount * 3);
-        const color = new THREE.Color();
-
-        network.neurons.forEach((neuron, i) => {
-            dummy.position.set(neuron.position.x, neuron.position.y, neuron.position.z);
-            dummy.updateMatrix();
-            meshRef.current.setMatrixAt(i, dummy.matrix);
-            
-            // Bright neon colors
-            color.setHex(neuron.type === 'INHIBITORY' ? 0xff0088 : 0x00ffff);
-            color.toArray(colors, i * 3);
-        });
-
-        meshRef.current.instanceMatrix.needsUpdate = true;
-        
-        // Manual attribute creation to be 100% sure
-        const colorAttr = new THREE.InstancedBufferAttribute(colors, 3);
-        meshRef.current.geometry.setAttribute('instanceColor', colorAttr);
-        
-        console.log("%c[NEURAL_SCENE] Nuclear Shader initialized. Neurons: 200", "color: #ff00ff; font-weight: bold;");
-    }, [network, nodeCount]);
+    // Debug logging
+    console.log("Render Scene. Neurons:", network.neurons.length);
 
     useFrame((state, delta) => {
-        if (!meshRef.current || !connectionsRef.current || !network) return;
-
-        const { clock } = state;
-        network.step(Math.min(delta, 0.1));
-        const time = clock.getElapsedTime();
-
-        const dummy = new THREE.Object3D();
-        const color = new THREE.Color();
-        const colorsAttr = meshRef.current.geometry.attributes.instanceColor;
-
-        for (let i = 0; i < network.neuronCount; i++) {
-            const neuron = network.neurons[i];
-            
-            // Motion
-            dummy.position.set(
-                neuron.position.x + Math.sin(time * 0.5 + i) * 0.05,
-                neuron.position.y + Math.cos(time * 0.6 + i) * 0.05,
-                neuron.position.z + Math.sin(time * 0.7 + i) * 0.05
-            );
-            dummy.updateMatrix();
-            meshRef.current.setMatrixAt(i, dummy.matrix);
-
-            // COLOR LOGIC: Super Bright
-            if (neuron.potential > 0.5) {
-                color.setRGB(1.0, 1.0, 1.0); // White flash
-            } else if (neuron.type === 'INHIBITORY') {
-                color.setHSL(0.9, 1.0, 0.5 + neuron.potential * 0.5); 
-            } else {
-                color.setHSL(0.5, 1.0, 0.5 + neuron.potential * 0.5); 
-            }
-            
-            if (colorsAttr) {
-                color.toArray(colorsAttr.array, i * 3);
-            }
-        }
+        if (!network || !groupRef.current) return;
         
-        meshRef.current.instanceMatrix.needsUpdate = true;
-        if (colorsAttr) colorsAttr.needsUpdate = true;
+        const time = state.clock.getElapsedTime();
+        network.step(Math.min(delta, 0.1), time);
+
+        // Update Neurons
+        groupRef.current.children.forEach((child, i) => {
+            const neuron = network.neurons[i];
+            if (neuron) {
+                // Pulse scale with safety check
+                let s = 0.5 + (neuron.potential || 0) * 0.4;
+                if (isNaN(s) || s < 0.1) s = 0.5;
+                child.scale.setScalar(s);
+                
+                // Update uniforms if it's our custom shader
+                if (child.material.uniforms) {
+                    child.material.uniforms.time.value = time;
+                    child.material.uniforms.potential.value = neuron.potential || 0;
+                }
+            }
+        });
 
         // Update Connections
         if (connectionsRef.current) {
@@ -119,25 +48,24 @@ const Scene = ({ networkRef }) => {
              if (cAttr) {
                 let colorIdx = 0;
                 network.connections.forEach(conn => {
-                     const intensity = 0.5 + conn.active * 0.5;
-                     const c = new THREE.Color(0x00ffff).multiplyScalar(intensity);
-                     cAttr.setXYZ(colorIdx++, c.r, c.g, c.b);
-                     cAttr.setXYZ(colorIdx++, c.r, c.g, c.b);
+                     const intensity = 0.2 + conn.active * 0.8;
+                     const c = new THREE.Color(neuronColors.inactive).lerp(new THREE.Color(neuronColors.active), conn.active);
+                     cAttr.setXYZ(colorIdx++, c.r * intensity, c.g * intensity, c.b * intensity);
+                     cAttr.setXYZ(colorIdx++, c.r * intensity, c.g * intensity, c.b * intensity);
                 });
                 cAttr.needsUpdate = true;
              }
         }
     });
 
-    const handleClick = (e) => {
-        if (!network || !meshRef.current) return;
-        if (e.intersections.length > 0) {
-            const p = e.intersections[0].point;
-            network.collapseAt(p.x, p.y, p.z, 15, 6.0);
-        }
+    const neuronColors = {
+        excitatory: '#00ffff',
+        inhibitory: '#ff00ff',
+        active: '#ffffff',
+        inactive: '#004466'
     };
 
-    const lineGeometry = useMemo(() => {
+    const connectionGeo = useMemo(() => {
         const points = [];
         const colors = [];
         network.connections.forEach(conn => {
@@ -145,10 +73,9 @@ const Scene = ({ networkRef }) => {
             const n2 = network.neurons[conn.to];
             points.push(n1.position.x, n1.position.y, n1.position.z);
             points.push(n2.position.x, n2.position.y, n2.position.z);
-            colors.push(0.5, 1.0, 1.0);
-            colors.push(0.5, 1.0, 1.0);
+            colors.push(0, 0.2, 0.3);
+            colors.push(0, 0.2, 0.3);
         });
-        
         const geo = new THREE.BufferGeometry();
         geo.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
         geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
@@ -157,20 +84,55 @@ const Scene = ({ networkRef }) => {
 
     return (
         <group>
-            <instancedMesh 
-                ref={meshRef} 
-                args={[null, null, nodeCount]}
-                onClick={handleClick}
-                material={neuronMaterial}
-            >
-                <sphereGeometry args={[0.5, 12, 12]} />
-            </instancedMesh>
+            {/* Neurons */}
+            <group ref={groupRef}>
+                {network.neurons.map((neuron, i) => (
+                    <mesh key={`n-${i}`} position={[neuron.position.x, neuron.position.y, neuron.position.z]} scale={[1,1,1]}>
+                        <sphereGeometry args={[1, 12, 12]} />
+                        <shaderMaterial 
+                            transparent
+                            uniforms={{
+                                time: { value: 0 },
+                                baseColor: { value: new THREE.Color(neuron.type === 'INHIBITORY' ? neuronColors.inhibitory : neuronColors.excitatory) },
+                                potential: { value: 0 }
+                            }}
+                            vertexShader={`
+                                varying vec3 vNormal;
+                                varying vec3 vViewPosition;
+                                void main() {
+                                    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+                                    vNormal = normalize(normalMatrix * normal);
+                                    vViewPosition = -mvPosition.xyz;
+                                    gl_Position = projectionMatrix * mvPosition;
+                                }
+                            `}
+                            fragmentShader={`
+                                varying vec3 vNormal;
+                                varying vec3 vViewPosition;
+                                uniform vec3 baseColor;
+                                uniform float potential;
+                                uniform float time;
+                                void main() {
+                                    vec3 normal = normalize(vNormal);
+                                    vec3 viewDir = normalize(vViewPosition);
+                                    float fresnel = pow(1.2 - dot(normal, viewDir), 2.0);
+                                    float pulse = 0.5 + 0.5 * sin(time * 10.0 + potential * 5.0);
+                                    vec3 color = baseColor * (1.5 + fresnel * 4.0);
+                                    color += vec3(1.0) * potential * (1.0 + pulse);
+                                    gl_FragColor = vec4(color, 1.0);
+                                }
+                            `}
+                        />
+                    </mesh>
+                ))}
+            </group>
 
-            <lineSegments 
-                ref={connectionsRef} 
-                geometry={lineGeometry} 
-                material={lineMaterial} 
-            />
+            {/* Signals would go here as regular meshes for max reliability if needed */}
+            
+            {/* Connections */}
+            <lineSegments geometry={connectionGeo} ref={connectionsRef}>
+                <lineBasicMaterial vertexColors transparent opacity={0.4} blending={THREE.AdditiveBlending} />
+            </lineSegments>
         </group>
     );
 };
