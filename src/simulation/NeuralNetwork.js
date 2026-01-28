@@ -65,22 +65,20 @@ export class NeuralNetwork {
             }
 
             // Spontaneous activity (Noise)
-            if (Math.random() < 0.001) {
-                n.potential += 0.3;
+            if (Math.random() < 0.005) { // Increased noise
+                n.potential += 0.4;
             }
 
             // Check threshold
             if (n.potential >= n.threshold) {
                 n.potential = 0;
-                n.refractoryPeriod = 0.1; // 100ms cooldown
+                n.refractoryPeriod = 0.05; // Shorter cooldown
                 firingNeurons.push(n.id);
             }
         });
 
         // 2. Propagate spikes
         firingNeurons.forEach(id => {
-            // Find connections originating from this neuron
-            // (Our connections array is undirected for visualization, but let's treat it bi-directionally for simplicity or find relevant links)
             this.connections.forEach(conn => {
                 let targetId = -1;
                 if (conn.from === id) targetId = conn.to;
@@ -91,9 +89,9 @@ export class NeuralNetwork {
                     const target = this.neurons[targetId];
                     
                     if (source.type === 'EXCITATORY') {
-                        target.potential += conn.weight * 0.2;
+                        target.potential += conn.weight * 0.3; // Increased weight
                     } else {
-                        target.potential -= conn.weight * 0.5; // Inhibition
+                        target.potential -= conn.weight * 0.4; // Inhibition
                     }
 
                     // Visualize pulse
@@ -104,7 +102,7 @@ export class NeuralNetwork {
 
         // 3. Update connection visuals (decay activity)
         this.connections.forEach(conn => {
-            if (conn.active > 0) conn.active *= 0.9;
+            if (conn.active > 0) conn.active *= 0.85; // Faster fade
         });
 
         return firingNeurons;
@@ -115,5 +113,33 @@ export class NeuralNetwork {
             const idx = Math.floor(Math.random() * this.neuronCount);
             this.neurons[idx].potential += strength;
         }
+    }
+
+    collapseAt(x, y, z, range = 5, intensity = 2.0) {
+        this.neurons.forEach(n => {
+            const dist = Math.sqrt(
+                Math.pow(n.position.x - x, 2) +
+                Math.pow(n.position.y - y, 2) +
+                Math.pow(n.position.z - z, 2)
+            );
+
+            if (dist < range) {
+                n.potential += intensity * (1 - dist/range);
+                n.refractoryPeriod = 0; // Force immediate firing
+            }
+        });
+    }
+
+    stimulateNear(x, y, z, range = 2) {
+        this.neurons.forEach(n => {
+            const dist = Math.sqrt(
+                Math.pow(n.position.x - x, 2) +
+                Math.pow(n.position.y - y, 2) +
+                Math.pow(n.position.z - z, 2)
+            );
+            if (dist < range) {
+                n.potential += 0.05; // Subtle stim by hover
+            }
+        });
     }
 }

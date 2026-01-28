@@ -41,6 +41,20 @@ const Scene = ({ networkRef }) => {
     useFrame((state, delta) => {
         if (!meshRef.current || !connectionsRef.current || !network) return;
 
+        // Mouse Interaction
+        const { raycaster, mouse, camera } = state;
+        raycaster.setFromCamera(mouse, camera);
+        
+        // Handle Hover Stimulation
+        const intersects = raycaster.intersectObject(meshRef.current);
+        if (intersects.length > 0) {
+            const instanceId = intersects[0].instanceId;
+            const neuron = network.neurons[instanceId];
+            if (neuron) {
+                network.stimulateNear(neuron.position.x, neuron.position.y, neuron.position.z, 2.5);
+            }
+        }
+
         const firingIds = network.step(Math.min(delta, 0.1)); // Update logic
         const time = state.clock.getElapsedTime();
 
@@ -62,9 +76,9 @@ const Scene = ({ networkRef }) => {
 
             // Color logic: Base + Potential
             if (neuron.type === 'INHIBITORY') {
-                 color.setHSL(0.9, 0.8, 0.1 + neuron.potential * 0.8); // Red flip
+                 color.setHSL(0.9, 0.8, 0.05 + neuron.potential * 0.9); // Darker base, brighter pulse
             } else {
-                 color.setHSL(0.5, 0.8, 0.1 + neuron.potential * 0.8); // Blue pulse
+                 color.setHSL(0.5, 0.8, 0.05 + neuron.potential * 0.9); 
             }
             meshRef.current.setColorAt(i, color);
         }
@@ -77,7 +91,8 @@ const Scene = ({ networkRef }) => {
              if (colors) {
                 let colorIdx = 0;
                 network.connections.forEach(conn => {
-                     const c = new THREE.Color().setHex(0x1f2430).lerp(new THREE.Color(0x5ccfe6), conn.active);
+                     const intensity = 0.05 + conn.active * 0.8;
+                     const c = new THREE.Color().setHex(0x050505).lerp(new THREE.Color(0x5ccfe6), intensity);
                      colors.setXYZ(colorIdx++, c.r, c.g, c.b);
                      colors.setXYZ(colorIdx++, c.r, c.g, c.b);
                 });
@@ -85,6 +100,17 @@ const Scene = ({ networkRef }) => {
              }
         }
     });
+
+    const handleClick = (e) => {
+        if (!network || !meshRef.current) return;
+        const { raycaster, camera } = e; // R3F event provides these
+        // Note: R3F onClick already handles raycasting. 
+        // But for "Anywhere" click we need a plane or just use the event data.
+        if (e.intersections.length > 0) {
+            const p = e.intersections[0].point;
+            network.collapseAt(p.x, p.y, p.z, 6, 3.0);
+        }
+    };
 
     // Build Line Geometry
     const lineGeometry = useMemo(() => {
@@ -95,8 +121,8 @@ const Scene = ({ networkRef }) => {
             const n2 = network.neurons[conn.to];
             points.push(n1.position.x, n1.position.y, n1.position.z);
             points.push(n2.position.x, n2.position.y, n2.position.z);
-            colors.push(0.1, 0.1, 0.2);
-            colors.push(0.1, 0.1, 0.2);
+            colors.push(0x05 / 255, 0x05 / 255, 0x05 / 255);
+            colors.push(0x05 / 255, 0x05 / 255, 0x05 / 255);
         });
         
         const geo = new THREE.BufferGeometry();
@@ -107,12 +133,20 @@ const Scene = ({ networkRef }) => {
 
     return (
         <group rotation={[0, 0, 0]}>
-            <instancedMesh ref={meshRef} args={[null, null, nodeCount]}>
-                <sphereGeometry args={[0.15, 16, 16]} />
+            <instancedMesh 
+                ref={meshRef} 
+                args={[null, null, nodeCount]}
+                onClick={handleClick}
+                onPointerMissed={(e) => {
+                    // Random collapse on miss if LPM is down?
+                    // Let's just do it on any click for now
+                }}
+            >
+                <sphereGeometry args={[0.18, 16, 16]} />
                 <meshStandardMaterial 
                     toneMapped={false}
-                    roughness={0.4}
-                    metalness={0.8}
+                    roughness={0.2}
+                    metalness={0.9}
                 />
             </instancedMesh>
 
