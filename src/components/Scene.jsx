@@ -13,9 +13,6 @@ const Scene = ({ networkRef, nodeCount = 100 }) => {
         return net;
     }, [nodeCount, networkRef]);
 
-    const signalGeo = useMemo(() => new THREE.SphereGeometry(0.15, 8, 8), []);
-    const signalMat = useMemo(() => new THREE.MeshBasicMaterial({ color: '#ffffff', toneMapped: false }), []);
-
     // Debug logging
     console.log("Render Scene. Neurons:", network.neurons.length);
 
