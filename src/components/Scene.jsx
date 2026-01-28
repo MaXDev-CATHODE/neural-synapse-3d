@@ -74,11 +74,13 @@ const Scene = ({ networkRef }) => {
             dummy.updateMatrix();
             meshRef.current.setMatrixAt(i, dummy.matrix);
 
-            // Color logic: Base + Potential
+            // Color logic: Base (dim) + Potential (glow)
             if (neuron.type === 'INHIBITORY') {
-                 color.setHSL(0.9, 0.8, 0.05 + neuron.potential * 0.9); // Darker base, brighter pulse
+                 // Reddish for inhibitory
+                 color.setHSL(0.95, 0.7, 0.2 + neuron.potential * 0.6); 
             } else {
-                 color.setHSL(0.5, 0.8, 0.05 + neuron.potential * 0.9); 
+                 // Cyan/Blue for excitatory
+                 color.setHSL(0.55, 0.8, 0.2 + neuron.potential * 0.7); 
             }
             meshRef.current.setColorAt(i, color);
         }
@@ -91,8 +93,9 @@ const Scene = ({ networkRef }) => {
              if (colors) {
                 let colorIdx = 0;
                 network.connections.forEach(conn => {
-                     const intensity = 0.05 + conn.active * 0.8;
-                     const c = new THREE.Color().setHex(0x050505).lerp(new THREE.Color(0x5ccfe6), intensity);
+                     const intensity = 0.15 + conn.active * 0.8;
+                     const targetColor = new THREE.Color(0x5ccfe6);
+                     const c = new THREE.Color(0x101520).lerp(targetColor, intensity);
                      colors.setXYZ(colorIdx++, c.r, c.g, c.b);
                      colors.setXYZ(colorIdx++, c.r, c.g, c.b);
                 });
@@ -103,12 +106,9 @@ const Scene = ({ networkRef }) => {
 
     const handleClick = (e) => {
         if (!network || !meshRef.current) return;
-        const { raycaster, camera } = e; // R3F event provides these
-        // Note: R3F onClick already handles raycasting. 
-        // But for "Anywhere" click we need a plane or just use the event data.
         if (e.intersections.length > 0) {
             const p = e.intersections[0].point;
-            network.collapseAt(p.x, p.y, p.z, 6, 3.0);
+            network.collapseAt(p.x, p.y, p.z, 8, 4.0);
         }
     };
 
@@ -121,8 +121,9 @@ const Scene = ({ networkRef }) => {
             const n2 = network.neurons[conn.to];
             points.push(n1.position.x, n1.position.y, n1.position.z);
             points.push(n2.position.x, n2.position.y, n2.position.z);
-            colors.push(0x05 / 255, 0x05 / 255, 0x05 / 255);
-            colors.push(0x05 / 255, 0x05 / 255, 0x05 / 255);
+            // Default dark blue for connections
+            colors.push(0.05, 0.1, 0.15);
+            colors.push(0.05, 0.1, 0.15);
         });
         
         const geo = new THREE.BufferGeometry();
@@ -137,16 +138,13 @@ const Scene = ({ networkRef }) => {
                 ref={meshRef} 
                 args={[null, null, nodeCount]}
                 onClick={handleClick}
-                onPointerMissed={(e) => {
-                    // Random collapse on miss if LPM is down?
-                    // Let's just do it on any click for now
-                }}
             >
-                <sphereGeometry args={[0.18, 16, 16]} />
+                <sphereGeometry args={[0.22, 16, 16]} />
                 <meshStandardMaterial 
                     toneMapped={false}
-                    roughness={0.2}
-                    metalness={0.9}
+                    emissiveIntensity={2}
+                    roughness={0.1}
+                    metalness={0.5}
                 />
             </instancedMesh>
 
